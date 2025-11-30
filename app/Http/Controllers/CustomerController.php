@@ -8,6 +8,17 @@ use App\Models\Customer;
 
 class CustomerController extends Controller
 {
+    public function all()
+    {
+        $customers = Customer::select(['id', 'name']) // Only fetch id and name
+            ->select(['id', 'name']) // Only fetch id and name
+            ->get();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Menampilkan data pelanggan',
+            'data' => $customers
+        ], 200);
+    }
     /**
      * Display a listing of the resource.
      */

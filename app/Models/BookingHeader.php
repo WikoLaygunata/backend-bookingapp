@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Booking extends Model
+class BookingHeader extends Model
 {
     use HasUlids, SoftDeletes;
 
@@ -16,9 +16,10 @@ class Booking extends Model
 
     protected $fillable = [
         'customer_id',
-        'schedule_id',
         'booking_date',
-        'total_price',
+        'subtotal',
+        'discount',
+        'total',
         'status',
         'notes',
     ];
@@ -28,8 +29,8 @@ class Booking extends Model
         return $this->belongsTo(Customer::class, 'customer_id');
     }
 
-    public function schedule()
+    public function details()
     {
-        return $this->belongsTo(Schedule::class, 'schedule_id');
+        return $this->hasMany(BookingDetail::class, 'booking_header_id');
     }
 }

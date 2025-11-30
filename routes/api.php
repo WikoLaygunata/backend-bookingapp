@@ -19,14 +19,29 @@ Route::get('packages/{package}', [PackageController::class, 'show']);
 Route::get('schedules', [ScheduleController::class, 'index']);
 Route::get('schedules/{schedule}', [ScheduleController::class, 'show']);
 
+Route::get('availability', [BookingController::class, 'checkAvailability']);
+
+Route::get('availability-public', [BookingController::class, 'getPublicAvailabilityMatrix']);
+Route::get('availability-public-daily', [BookingController::class, 'getPublicDailyAvailabilityMatrix']);
+
+
+
 Route::middleware(['auth:api'])->prefix('dashboard')->group(function () {
 
+    Route::get('all-customers', [CustomerController::class, 'all']);
     Route::apiResource('customers', CustomerController::class);
 
     Route::apiResource('fields', FieldController::class)->except(['index', 'show']);
     Route::apiResource('packages', PackageController::class)->except(['index', 'show']);
     Route::apiResource('schedules', ScheduleController::class)->except(['index', 'show']);
     Route::apiResource('bookings', BookingController::class);
+
+    Route::get('availability-admin', [BookingController::class, 'getAdminAvailabilityMatrix']);
+    Route::get('availability-admin-daily', [BookingController::class, 'getAdminDailyAvailabilityMatrix']);
+
+    // Rute Tampilan Matriks Ketersediaan
+    Route::get('bookings/matrix', [BookingController::class, 'getAvailabilityMatrix']);
+    Route::post('bookings/multiple', [BookingController::class, 'storeMultiple']);
 });
 
 Route::middleware(['auth:api', 'admin'])->prefix('dashboard')->group(function () {
