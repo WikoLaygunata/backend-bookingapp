@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Field;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use App\Models\Schedule;
@@ -39,15 +41,32 @@ class ScheduleController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, string $field_id = null)
     {
-        $validator = Validator::make($request->all(), [
-            'field_id' => 'required|exists:fields,id',
-            'start_time' => 'required|date_format:H:i:s',
-            'end_time' => 'required|date_format:H:i:s|after:start_time',
-            'status' => ['required', Rule::in(['available', 'booked', 'maintenance'])],
-            'price' => 'required|numeric|min:0',
-        ]);
+        // Support both pure array payload and {schedules: [...]} shape
+        $payload = $request->input('schedules', $request->all());
+
+        if (!is_array($payload)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payload harus berupa array schedules'
+            ], 422);
+        }
+
+        // Normalise to sequential indices
+        $payload = array_values($payload);
+
+        $validator = Validator::make(
+            ['schedules' => $payload],
+            [
+                'schedules' => 'required|array|min:1',
+                'schedules.*.field_id' => 'required|exists:fields,id',
+                'schedules.*.start_time' => 'required|date_format:H:i:s',
+                'schedules.*.end_time' => 'required|date_format:H:i:s|after:start_time',
+                'schedules.*.status' => ['required', Rule::in(['available', 'booked', 'maintenance'])],
+                'schedules.*.price' => 'required|numeric|min:0',
+            ]
+        );
 
         if ($validator->fails()) {
             return response()->json([
@@ -57,9 +76,26 @@ class ScheduleController extends Controller
             ], 422);
         }
 
-        $schedule = Schedule::create($request->all());
+        $expectedFieldId = $field_id ?? ($payload[0]['field_id'] ?? null);
 
-        if (!$schedule) {
+        // Pastikan semua field_id sama dengan parameter rute atau antar item
+        $fieldMismatch = collect($payload)->contains(function ($item) use ($expectedFieldId) {
+            return ($item['field_id'] ?? null) !== $expectedFieldId;
+        });
+
+        if ($fieldMismatch) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Field ID pada payload harus sama dengan parameter.'
+            ], 422);
+        }
+
+        $field = Field::find($expectedFieldId);
+
+        try {
+            $field->schedules()->delete();
+            $field->schedules()->createMany($payload);
+        } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Gagal menambahkan data jadwal'
@@ -69,19 +105,20 @@ class ScheduleController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Berhasil menambahkan data jadwal',
-            'data' => $schedule->load('field')
         ], 201);
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(Schedule $schedule)
+    public function show(string $field_id)
     {
+        $schedules = Schedule::where('field_id', $field_id)->orderBy('start_time')->get();
+
         return response()->json([
             'status' => 'success',
             'message' => 'Data berhasil ditampilkan',
-            'data' => $schedule->load('field')
+            'data' => $schedules
         ], 200);
     }
 

@@ -8,40 +8,38 @@ use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\AuthController;
 
+Route::post('dashboard/login', [AuthController::class, 'login']);
 
-Route::get('fields', [FieldController::class, 'index']);
-Route::get('fields/{field}', [FieldController::class, 'show']);
-
-Route::get('packages', [PackageController::class, 'index']);
-Route::get('packages/{package}', [PackageController::class, 'show']);
+Route::get('public-fields', [BookingController::class, 'getPublicDailyAvailabilityMatrix']);
 
 Route::get('schedules', [ScheduleController::class, 'index']);
-Route::get('schedules/{schedule}', [ScheduleController::class, 'show']);
-
-Route::get('availability', [BookingController::class, 'checkAvailability']);
-
-Route::get('availability-public', [BookingController::class, 'getPublicAvailabilityMatrix']);
-Route::get('availability-public-daily', [BookingController::class, 'getPublicDailyAvailabilityMatrix']);
-
+Route::get('schedules/{field_id}', [ScheduleController::class, 'show']);
 
 
 Route::middleware(['auth:api'])->prefix('dashboard')->group(function () {
+    Route::post('logout', [AuthController::class, 'logout']);
+    Route::get('me', [AuthController::class, 'me']);
+
 
     Route::get('all-customers', [CustomerController::class, 'all']);
+    Route::get('all-fields', [FieldController::class, 'all']);
     Route::apiResource('customers', CustomerController::class);
 
-    Route::apiResource('fields', FieldController::class)->except(['index', 'show']);
-    Route::apiResource('packages', PackageController::class)->except(['index', 'show']);
-    Route::apiResource('schedules', ScheduleController::class)->except(['index', 'show']);
-    Route::apiResource('bookings', BookingController::class);
+    Route::apiResource('fields', FieldController::class);
+    Route::apiResource('packages', PackageController::class);
 
-    Route::get('availability-admin', [BookingController::class, 'getAdminAvailabilityMatrix']);
-    Route::get('availability-admin-daily', [BookingController::class, 'getAdminDailyAvailabilityMatrix']);
+    Route::apiResource('schedules', ScheduleController::class);
+    Route::post('schedules/{field_id}', [ScheduleController::class, 'store']);
 
-    // Rute Tampilan Matriks Ketersediaan
-    Route::get('bookings/matrix', [BookingController::class, 'getAvailabilityMatrix']);
-    Route::post('bookings/multiple', [BookingController::class, 'storeMultiple']);
+    Route::apiResource('bookings', BookingController::class, ['except' => ['show', 'update']]);
+    Route::put('bookings/{bookingHeader}', [BookingController::class, 'update']);
+
+    // Route::get('bookings/admin-matrix', [BookingController::class, 'getAdminAvailabilityMatrix']);
+    Route::get('bookings/admin-matrix', [BookingController::class, 'getAdminDailyAvailabilityMatrix']);
+
+    Route::post('bookings/store-multiple', [BookingController::class, 'storeMultiple']);
 });
 
 Route::middleware(['auth:api', 'admin'])->prefix('dashboard')->group(function () {

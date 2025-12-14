@@ -39,7 +39,7 @@ class UserController extends Controller
         $validator = Validator::make($request->all(), [
             'username' => ['required', 'string', 'max:255', Rule::unique('users')->where(fn($query) => $query->whereNull('deleted_at'))],
             'password' => 'required|string|min:6',
-            'role' => ['required', Rule::in(['admin', 'manager', 'user'])],
+            'role' => ['required', Rule::in(['admin', 'staf'])],
         ]);
 
         if ($validator->fails()) {
@@ -90,7 +90,7 @@ class UserController extends Controller
         $validator = Validator::make($request->all(), [
             'username' => ['required', 'string', 'max:255', Rule::unique('users')->ignore($user->id)->where(fn($query) => $query->whereNull('deleted_at'))],
             'password' => 'nullable|string|min:6',
-            'role' => ['required', Rule::in(['admin', 'manager', 'user'])],
+            'role' => ['required', Rule::in(['admin', 'staf'])],
         ]);
 
         if ($validator->fails()) {

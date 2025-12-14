@@ -22,6 +22,12 @@ class Schedule extends Model
         'price',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     public function field()
     {
         return $this->belongsTo(Field::class, 'field_id');
@@ -29,6 +35,6 @@ class Schedule extends Model
 
     public function bookings()
     {
-        return $this->hasMany(Booking::class, 'schedule_id');
+        return $this->hasMany(BookingDetail::class, 'schedule_id');
     }
 }

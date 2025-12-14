@@ -9,6 +9,15 @@ use App\Models\Field;
 
 class FieldController extends Controller
 {
+    public function all()
+    {
+        $fields = Field::select(['id', 'name'])->get();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Menampilkan data lapangan',
+            'data' => $fields
+        ], 200);
+    }
     /**
      * Display a listing of the resource.
      */
@@ -116,6 +125,9 @@ class FieldController extends Controller
     {
         // Pengecekan relasi ke Package atau Schedule sebelum dihapus secara permanen (opsional)
         // Soft delete umumnya menangani ini dengan baik tanpa menghapus data terkait
+
+        $field->schedules()->delete();
+        $field->packages()->delete();
 
         if (!$field->delete()) {
             return response()->json([

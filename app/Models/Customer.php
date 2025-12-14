@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\BookingHeader;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -22,6 +23,6 @@ class Customer extends Model
 
     public function bookings()
     {
-        return $this->hasMany(Booking::class, 'customer_id');
+        return $this->hasMany(BookingHeader::class, 'customer_id');
     }
 }
