@@ -9,6 +9,15 @@ use App\Models\Package;
 
 class PackageController extends Controller
 {
+    public function all()
+    {
+        $packages = Package::with('field')->select(['id', 'name', 'price', 'description'])->get();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Menampilkan data paket',
+            'data' => $packages
+        ], 200);
+    }
     /**
      * Display a listing of the resource.
      */
@@ -25,7 +34,7 @@ class PackageController extends Controller
             })
             ->when($search, function ($query) use ($search) {
                 return $query->where('name', 'like', '%' . $search . '%')
-                ->orWhere('field.name', 'like', '%' . $search . '%');
+                    ->orWhere('field.name', 'like', '%' . $search . '%');
             })->paginate($per_page, ['*'], 'page', $page);
 
         return response()->json([

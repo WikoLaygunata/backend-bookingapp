@@ -17,6 +17,7 @@ Route::get('public-fields', [BookingController::class, 'getPublicDailyAvailabili
 Route::get('schedules', [ScheduleController::class, 'index']);
 Route::get('schedules/{field_id}', [ScheduleController::class, 'show']);
 
+Route::get('all-packages', [PackageController::class, 'all']);
 
 Route::middleware(['auth:api'])->prefix('dashboard')->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);

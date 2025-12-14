@@ -10,7 +10,6 @@ use App\Models\BookingHeader;
 use App\Models\BookingDetail;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class BookingController extends Controller
 {
@@ -32,7 +31,7 @@ class BookingController extends Controller
 
         // 2. Ambil Semua Schedules & Fields
         $schedules = Schedule::select('id', 'field_id', 'start_time', 'end_time', 'price')
-            ->with(['field' => fn($q) => $q->select('id', 'name')])
+            ->with(['field' => fn($q) => $q->select('id', 'name')->orderBy('name')])
             ->orderBy('start_time')
             ->orderBy('field_id')
             ->get();
@@ -42,7 +41,10 @@ class BookingController extends Controller
             ->pluck('schedule_id');
 
         // 4. Data Structuring
-        $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => ['id' => $f->id, 'name' => $f->name])->values();
+        $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => [
+            'id' => $f->id,
+            'name' => $f->name
+        ])->sortBy('name')->values();
 
         // 5. Matrix Generation: Group by Fields, then Time Slots
         $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($bookedScheduleIds, $fields) {
@@ -74,7 +76,9 @@ class BookingController extends Controller
                 'field_name' => $field['name'] ?? null,
                 'schedules' => $schedulesData
             ];
-        });
+        })->sortBy(function ($item) {
+            return $item['field_name'];
+        })->values();
 
         return response()->json([
             'status' => 'success',
@@ -177,26 +181,28 @@ class BookingController extends Controller
             ? Carbon::parse($request->booking_date)->format('Y-m-d')
             : Carbon::today()->format('Y-m-d');
 
-        // 2. Ambil Semua Schedules & Fields (Tidak berubah)
-        $schedules = Schedule::select('id', 'field_id', 'start_time', 'end_time', 'price') // price tetap di-select untuk proses internal
-            ->with(['field' => fn($q) => $q->select('id', 'name')])
+        // 2. Ambil Semua Schedules & Fields
+        $schedules = Schedule::select('id', 'field_id', 'start_time', 'end_time', 'price')
+            ->with(['field' => fn($q) => $q->select('id', 'name')->orderBy('name')])
             ->orderBy('start_time')
             ->orderBy('field_id')
             ->get();
 
-        // 3. Ambil data booking detail LENGKAP untuk tanggal target (Tidak berubah)
+        // 3. Ambil data booking detail LENGKAP untuk tanggal target
         $allBookings = BookingDetail::where('booking_date', $targetDate)
             ->with(['header' => fn($q) => $q->select('id', 'customer_id', 'status')->with('customer:id,name')])
             ->get(['id', 'booking_header_id', 'schedule_id']);
 
         // 4. Data Structuring: Lookup Table LENGKAP
         $bookingsLookup = $allBookings->keyBy('schedule_id');
-        $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => ['id' => $f->id, 'name' => $f->name])->values();
+        $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => [
+            'id' => $f->id,
+            'name' => $f->name
+        ])->sortBy('name')->values();
 
         // 5. Matrix Generation: Group by Fields, then Time Slots
         $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($bookingsLookup, $fields) {
             $field = $fields->firstWhere('id', $fieldId);
-            $fieldKey = 'field_' . $fieldId;
 
             $schedulesData = $fieldSchedules->map(function ($schedule) use ($bookingsLookup) {
                 $timeSlot = substr($schedule->start_time, 0, 5) . ' - ' . substr($schedule->end_time, 0, 5);
@@ -233,7 +239,9 @@ class BookingController extends Controller
                 'field_name' => $field['name'] ?? null,
                 'schedules' => $schedulesData
             ];
-        });
+        })->sortBy(function ($item) {
+            return $item['field_name'];
+        })->values();
 
         return response()->json([
             'status' => 'success',
