@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use App\Models\Schedule;
 use App\Models\BookingHeader;
 use App\Models\BookingDetail;
+use App\Models\Membership;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -40,6 +41,17 @@ class BookingController extends Controller
         $bookedScheduleIds = BookingDetail::where('booking_date', $targetDate)
             ->pluck('schedule_id');
 
+        // 3.1. Ambil semua schedule_id yang ada di membership aktif untuk tanggal target
+        // Cek booking_day sesuai dengan hari dari tanggal target (1=Senin, 7=Minggu)
+        $targetDayOfWeek = Carbon::parse($targetDate)->dayOfWeekIso; // 1=Senin, 7=Minggu
+        $membershipScheduleIds = Membership::where('start_date', '<=', $targetDate)
+            ->where('end_date', '>=', $targetDate)
+            ->where('booking_day', $targetDayOfWeek)
+            ->pluck('schedule_id');
+
+        // Gabungkan booked schedule IDs dengan membership schedule IDs
+        $allBookedScheduleIds = $bookedScheduleIds->merge($membershipScheduleIds)->unique();
+
         // 4. Data Structuring
         $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => [
             'id' => $f->id,
@@ -47,10 +59,10 @@ class BookingController extends Controller
         ])->sortBy('name')->values();
 
         // 5. Matrix Generation: Group by Fields, then Time Slots
-        $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($bookedScheduleIds, $fields) {
+        $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($allBookedScheduleIds, $fields) {
             $field = $fields->firstWhere('id', $fieldId);
 
-            $schedulesData = $fieldSchedules->map(function ($schedule) use ($bookedScheduleIds) {
+            $schedulesData = $fieldSchedules->map(function ($schedule) use ($allBookedScheduleIds) {
                 $timeSlot = substr($schedule->start_time, 0, 5) . ' - ' . substr($schedule->end_time, 0, 5);
                 $scheduleId = $schedule->id;
 
@@ -61,8 +73,8 @@ class BookingController extends Controller
                     'status' => 'available',
                 ];
 
-                // Cek apakah sudah dibooking
-                if ($bookedScheduleIds->contains($scheduleId)) {
+                // Cek apakah sudah dibooking atau ada membership aktif
+                if ($allBookedScheduleIds->contains($scheduleId)) {
                     $slotData['status'] = 'booked';
                 }
 
@@ -193,18 +205,28 @@ class BookingController extends Controller
             ->with(['header' => fn($q) => $q->select('id', 'customer_id', 'status')->with('customer:id,name')])
             ->get(['id', 'booking_header_id', 'schedule_id']);
 
+        // 3.1. Ambil data membership yang aktif untuk tanggal target
+        // Cek booking_day sesuai dengan hari dari tanggal target (1=Senin, 7=Minggu)
+        $targetDayOfWeek = Carbon::parse($targetDate)->dayOfWeekIso; // 1=Senin, 7=Minggu
+        $allMemberships = Membership::where('start_date', '<=', $targetDate)
+            ->where('end_date', '>=', $targetDate)
+            ->where('booking_day', $targetDayOfWeek)
+            ->select('id', 'name', 'schedule_id')
+            ->get();
+
         // 4. Data Structuring: Lookup Table LENGKAP
         $bookingsLookup = $allBookings->keyBy('schedule_id');
+        $membershipsLookup = $allMemberships->keyBy('schedule_id');
         $fields = $schedules->pluck('field')->unique('id')->map(fn($f) => [
             'id' => $f->id,
             'name' => $f->name
         ])->sortBy('name')->values();
 
         // 5. Matrix Generation: Group by Fields, then Time Slots
-        $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($bookingsLookup, $fields) {
+        $dataByField = $schedules->groupBy('field_id')->map(function ($fieldSchedules, $fieldId) use ($bookingsLookup, $membershipsLookup, $fields) {
             $field = $fields->firstWhere('id', $fieldId);
 
-            $schedulesData = $fieldSchedules->map(function ($schedule) use ($bookingsLookup) {
+            $schedulesData = $fieldSchedules->map(function ($schedule) use ($bookingsLookup, $membershipsLookup) {
                 $timeSlot = substr($schedule->start_time, 0, 5) . ' - ' . substr($schedule->end_time, 0, 5);
                 $scheduleId = $schedule->id;
 
@@ -217,6 +239,7 @@ class BookingController extends Controller
                     'customer_info' => null,
                 ];
 
+                // Prioritas: Booking lebih dulu, baru Membership
                 $bookedDetail = $bookingsLookup->get($scheduleId);
                 if ($bookedDetail) {
                     $header = $bookedDetail->header;
@@ -227,6 +250,18 @@ class BookingController extends Controller
                         'id' => $header->customer->id,
                         'name' => $header->customer->name,
                     ];
+                } else {
+                    // Cek membership jika tidak ada booking
+                    $membership = $membershipsLookup->get($scheduleId);
+                    if ($membership) {
+                        $slotData['status'] = 'booked';
+                        $slotData['booking_header_id'] = null; // Membership tidak punya booking_header_id
+                        $slotData['booking_status'] = 'membership';
+                        $slotData['customer_info'] = [
+                            'id' => $membership->id,
+                            'name' => 'Member ' . $membership->name,
+                        ];
+                    }
                 }
 
                 return $slotData;
@@ -374,58 +409,61 @@ class BookingController extends Controller
         }
     }
 
+    /**
+     * Get all booking headers with status 'dp' (Down Payment)
+     */
+    public function getDPBooking(Request $request)
+    {
+        $page = $request->page ?? 1;
+        $per_page = $request->per_page ?? 10;
+        $search = $request->search;
+
+        $bookings = BookingHeader::where('status', 'dp')
+            ->with([
+                'customer',
+                'details' => fn($q) => $q->with('schedule.field')
+            ])
+            // Filter Search (Customer Name)
+            ->when($search, function ($query) use ($search) {
+                return $query->whereHas('customer', fn($q) => $q->where('name', 'like', '%' . $search . '%'));
+            })
+            // Urutan default
+            ->orderBy('created_at', 'desc')
+            ->paginate($per_page, ['*'], 'page', $page);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Data booking dengan status DP berhasil ditampilkan',
+            'data' => $bookings
+        ], 200);
+    }
 
     /**
-     * Store a newly created resource in storage.
+     * Update booking status from 'dp' to 'lunas' (Full Payment)
      */
-    // public function store(Request $request)
-    // {
-    //     $validator = Validator::make($request->all(), [
-    //         'customer_id' => 'required|exists:customers,id',
-    //         'schedule_id' => 'required|exists:schedules,id',
-    //         'booking_date' => 'required|date|after_or_equal:today',
-    //         'total_price' => 'required|numeric|min:0',
-    //         'status' => ['required', Rule::in(['dp', 'lunas'])],
-    //         'notes' => 'nullable|string',
-    //     ]);
+    public function paymentBooking(Request $request, BookingHeader $bookingHeader)
+    {
+        // Validasi bahwa booking status harus 'dp'
+        if ($bookingHeader->status !== 'dp') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya booking dengan status DP yang dapat dilunasi.'
+            ], 400);
+        }
 
-    //     if ($validator->fails()) {
-    //         return response()->json([
-    //             'status' => 'error',
-    //             'errors' => $validator->errors(),
-    //             'message' => $validator->errors()->first()
-    //         ], 422);
-    //     }
+        // Update status menjadi 'lunas'
+        if (!$bookingHeader->update(['status' => 'lunas'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengubah status booking menjadi lunas'
+            ], 400);
+        }
 
-    //     // Contoh validasi tambahan: memastikan jadwal pada tanggal tersebut belum di-booking
-    //     $is_booked = Booking::where('schedule_id', $request->schedule_id)
-    //         ->where('booking_date', $request->booking_date)
-    //         ->where('status', '!=', 'lunas') // Asumsikan status 'cancelled' tidak menghalangi booking baru
-    //         ->exists();
-
-    //     if ($is_booked) {
-    //         return response()->json([
-    //             'status' => 'error',
-    //             'message' => 'Jadwal pada tanggal ini sudah dipesan.'
-    //         ], 400);
-    //     }
-
-
-    //     $booking = Booking::create($request->all());
-
-    //     if (!$booking) {
-    //         return response()->json([
-    //             'status' => 'error',
-    //             'message' => 'Gagal menambahkan data pemesanan'
-    //         ], 400);
-    //     }
-
-    //     return response()->json([
-    //         'status' => 'success',
-    //         'message' => 'Berhasil menambahkan data pemesanan',
-    //         'data' => $booking->load(['customer', 'schedule.field'])
-    //     ], 201);
-    // }
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Status booking berhasil diubah menjadi lunas',
+        ], 200);
+    }
 
     /**
      * Display the specified resource.

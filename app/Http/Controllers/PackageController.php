@@ -33,8 +33,7 @@ class PackageController extends Controller
                 return $query->where('field_id', $field_id);
             })
             ->when($search, function ($query) use ($search) {
-                return $query->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('field.name', 'like', '%' . $search . '%');
+                return $query->where('name', 'like', '%' . $search . '%');
             })->paginate($per_page, ['*'], 'page', $page);
 
         return response()->json([
